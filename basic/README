@@ -1,0 +1,77 @@
+     =========================================================
+     Geant4 - an Object-Oriented Toolkit for Simulation in HEP
+     =========================================================
+
+                             FastFiberBasic
+                            ---------------
+
+ Basic demonstration example of fastsim for optical fibre using a single
+ WLS fiber.
+
+
+ 1. GEOMETRY DEFINITION
+ ------------------------
+
+ A 1.0m long, 1.0mm diameter WLS (Kuraray Y-11(200)S) fiber positioned
+ at (x,y,z) = (1.0m,0.0m,0.0m). A SiPM (Hamamatsu S13615-1025) is attached
+ at +z end while an ideal mirror is attached at -z end.
+
+ 2. AN EVENT : Incident optical photons
+ ------------------------------------
+
+ GEANT4 particle gun is used to fire optical photons to the WLS fiber.
+ The photon energy around 2.8 eV (440nm) gives maximum WLS emission.
+
+
+ 3. VISUALIZATION
+ ------------------
+
+ The Visualization Manager is set in the main().
+ The initialisation of the drawing is done via the command
+ > /control/execute vis.mac
+
+ An optical photon is visualized as a cyan colored track.
+
+
+ 4. PHYSICS
+ ----------
+
+ The material properties of WLS fiber is defined in the FastFiberBasicMaterials.cc.
+ This example includes WLS absorption/emission spectra, light attenuation
+ length of a fiber.
+
+
+ 5. HOW TO START ?
+ -----------------
+
+ - compile and link to generate an executable
+      % cd basic
+      % mkdir build
+      % cmake ..
+      % make
+
+ - execute the program  in 'batch' mode from macro files
+      % ./FastFiberBasic run1.mac
+
+ - execute Test  in 'interactive mode' with visualization
+      %  ./FastFiberBasic
+         ...
+      Idle> type your commands
+         ...
+      Idle> exit
+
+ - several user defined commands
+   /fastfiber/action/useGPS true : activate GPS particle generator instead of using GEANT4 particle gun
+   /fastfiber/event/verbose 1 : print the information of optical photons which hit SD
+
+
+ 6. NTUPLE
+ --------------
+ This example generates ROOT ntuple which contains the properties of each optical photon detected in the SD:
+ (All units are GEANT4 defaults)
+
+ Energy (double): Energy of the optical photon
+ Time (double): Global time when the optical photon hit SD
+ PosX/Y/Z (double): Global position of the optical photon in X/Y/Z when the optical photon hit SD
+ MomX/Y/Z (double): Momentum of the optical photon in X/Y/Z when the optical photon hit SD
+ PolX/Y/Z (double): Polarization component of the optical photon in X/Y/Z when the optical photon hit SD
