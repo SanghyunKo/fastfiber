@@ -1,5 +1,6 @@
 #include "FastFiberBasicDetectorConstruction.hh"
 #include "FastFiberBasicSiPMSD.hh"
+#include "FastFiberModel.hh"
 
 #include "G4VSolid.hh"
 #include "G4Box.hh"
@@ -58,6 +59,8 @@ G4VPhysicalVolume* FastFiberBasicDetectorConstruction::Construct() {
   worldLogical->SetVisAttributes(fVisInvisible);
   auto worldPhysical = new G4PVPlacement(0,G4ThreeVector(),worldLogical,"worldPhysical",0,false,0,checkOverlaps);
 
+  mRegion = new G4Region("fiberRegion");
+
   G4double fibreLength = 1.0*m;
   G4double displacementX = 1.0*m;
 
@@ -69,6 +72,10 @@ G4VPhysicalVolume* FastFiberBasicDetectorConstruction::Construct() {
   cladLogic->SetVisAttributes(fVisAttrGray);
   G4LogicalVolume* coreLogic = new G4LogicalVolume(coreSolid,FindMaterial("Polystyrene_WLS"),"coreLogic");
   coreLogic->SetVisAttributes(fVisAttrGreen);
+
+  // region of FastFiberModel
+  cladLogic->SetRegion(mRegion);
+  mRegion->AddRootLogicalVolume(cladLogic);
 
   new G4PVPlacement(0,G4ThreeVector(displacementX,0.,0.),cladLogic,"cladPhysical",worldLogical,false,0,checkOverlaps);
   new G4PVPlacement(0,G4ThreeVector(),coreLogic,"corePhysical",cladLogic,false,0,checkOverlaps);
@@ -94,6 +101,8 @@ void FastFiberBasicDetectorConstruction::ConstructSDandField() {
   auto sipmSD = new FastFiberBasicSiPMSD("FastFiberBasicSiPMSD");
   sdManager->AddNewDetector(sipmSD);
   fSipmLogic->SetSensitiveDetector(sipmSD);
+
+  new FastFiberModel("FastFiberModel",mRegion);
 }
 
 void FastFiberBasicDetectorConstruction::DefineCommands() {

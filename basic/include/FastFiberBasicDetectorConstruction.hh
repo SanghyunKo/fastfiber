@@ -6,6 +6,7 @@
 #include "globals.hh"
 #include "G4VUserDetectorConstruction.hh"
 #include "G4VisAttributes.hh"
+#include "G4Region.hh"
 
 #include <vector>
 
@@ -33,6 +34,7 @@ class FastFiberBasicDetectorConstruction : public G4VUserDetectorConstruction {
     FastFiberBasicMaterials* fMaterials;
 
     G4LogicalVolume* fSipmLogic;
+    G4Region* mRegion;
 
     G4VisAttributes* fVisAttrGray;
     G4VisAttributes* fVisAttrGreen;
