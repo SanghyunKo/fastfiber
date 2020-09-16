@@ -30,7 +30,6 @@ class FastFiberBasicDetectorConstruction : public G4VUserDetectorConstruction {
     G4Material* FindMaterial(G4String matName) { return fMaterials->GetMaterial(matName); }
     G4OpticalSurface* FindSurface(G4String surfName) { return fMaterials->GetOpticalSurface(surfName); }
 
-    G4GenericMessenger* fMessenger;
     FastFiberBasicMaterials* fMaterials;
 
     G4LogicalVolume* fSipmLogic;

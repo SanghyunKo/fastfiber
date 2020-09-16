@@ -33,7 +33,7 @@ G4VHitsCollection* GetHC(const G4Event* event, G4int collId) {
 }
 
 FastFiberBasicEventAction::FastFiberBasicEventAction()
-: G4UserEventAction(), fMessenger(nullptr), fVerbose(0), fSiPMcollID(-1) {
+: G4UserEventAction(), fVerbose(0), fSiPMcollID(-1) {
   // set printing per each event
   G4RunManager::GetRunManager()->SetPrintProgress(1);
 

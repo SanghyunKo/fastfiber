@@ -6,7 +6,7 @@
 #include "G4OpProcessSubType.hh"
 #include "G4Tubs.hh"
 
-FastFiberData::FastFiberData(G4int id, G4double en, G4double globTime, G4double path, G4ThreeVector pos, G4ThreeVector mom, G4ThreeVector pol) {
+FastFiberData::FastFiberData(G4int id, G4double en, G4double globTime, G4double path, G4ThreeVector pos, G4ThreeVector mom, G4ThreeVector pol, G4int status) {
   trackID = id;
   kineticEnergy = en;
   globalTime = globTime;
@@ -14,6 +14,7 @@ FastFiberData::FastFiberData(G4int id, G4double en, G4double globTime, G4double 
   globalPosition = pos;
   momentumDirection = mom;
   polarization = pol;
+  mOpBoundaryStatus = status;
   mOpAbsorptionNumIntLenLeft = DBL_MAX;
   mOpWLSNumIntLenLeft = DBL_MAX;
 }
@@ -26,10 +27,17 @@ FastFiberData& FastFiberData::operator=(const FastFiberData &right) {
   globalPosition = right.globalPosition;
   momentumDirection = right.momentumDirection;
   polarization = right.polarization;
+  mOpBoundaryStatus = right.mOpBoundaryStatus;
   mOpAbsorptionNumIntLenLeft = right.mOpAbsorptionNumIntLenLeft;
   mOpWLSNumIntLenLeft = right.mOpWLSNumIntLenLeft;
 
   return *this;
+}
+
+G4bool FastFiberData::checkRepetitive(const FastFiberData theData) {
+  if ( this->trackID!=theData.trackID ) return false;
+  if ( this->mOpBoundaryStatus!=theData.mOpBoundaryStatus ) return false;
+  return true;
 }
 
 FastFiberModel::FastFiberModel(G4String name, G4Region* envelope)
@@ -124,8 +132,15 @@ G4bool FastFiberModel::checkTotalInternalReflection(const G4Track* track) {
   if (!fProcAssigned) setPostStepProc(track); // locate OpBoundaryProcess only once
 
   if ( track->GetTrackStatus()==fStopButAlive || track->GetTrackStatus()==fStopAndKill ) return false;
+  if ( mDataCurrent.trackID != track->GetTrackID() ) reset(); // reset when moving to the next track
 
-  if ( pOpBoundaryProc->GetStatus()==G4OpBoundaryProcessStatus::TotalInternalReflection ) {
+  G4int theStatus = pOpBoundaryProc->GetStatus();
+
+  if ( theStatus==G4OpBoundaryProcessStatus::TotalInternalReflection || theStatus==G4OpBoundaryProcessStatus::StepTooSmall ) { // several cases have a status StepTooSmall
+    if ( theStatus!=G4OpBoundaryProcessStatus::TotalInternalReflection ) { // skip StepTooSmall if the track already has TotalInternalReflection
+      if ( mDataCurrent.GetOpBoundaryStatus()==G4OpBoundaryProcessStatus::TotalInternalReflection ) return false;
+    }
+
     G4int trackID = track->GetTrackID();
     G4double kineticEnergy = track->GetKineticEnergy();
     G4double globalTime = track->GetGlobalTime();
@@ -135,12 +150,11 @@ G4bool FastFiberModel::checkTotalInternalReflection(const G4Track* track) {
     G4ThreeVector polarization = track->GetPolarization();
 
     mDataPrevious = mDataCurrent;
-    mDataCurrent = FastFiberData(trackID,kineticEnergy,globalTime,pathLength,globalPosition,momentumDirection,polarization);
+    mDataCurrent = FastFiberData(trackID,kineticEnergy,globalTime,pathLength,globalPosition,momentumDirection,polarization,theStatus);
     if ( pOpAbsorption!=nullptr ) mDataCurrent.SetAbsorptionNILL( pOpAbsorption->GetNumberOfInteractionLengthLeft() );
     if ( pOpWLS!=nullptr ) mDataCurrent.SetWLSNILL( pOpWLS->GetNumberOfInteractionLengthLeft() );
 
-    if ( mDataPrevious.trackID == mDataCurrent.trackID ) return true;
-    else reset();
+    if ( mDataCurrent.checkRepetitive(mDataPrevious) ) return true; // find a repetitive point with the same status & trackID
   }
 
   return false;
@@ -182,6 +196,8 @@ void FastFiberModel::reset() {
   mTransportUnit = 0.;
   mFiberAxis = G4ThreeVector(0);
   fKill = false;
+  mDataCurrent.SetOpBoundaryStatus(0);
+  mDataPrevious.SetOpBoundaryStatus(0);
 }
 
 void FastFiberModel::DefineCommands() {

@@ -24,9 +24,7 @@
 #include "G4SystemOfUnits.hh"
 
 FastFiberBasicDetectorConstruction::FastFiberBasicDetectorConstruction()
-: G4VUserDetectorConstruction(), fMessenger(nullptr), fSipmLogic(nullptr) {
-  // define commands for this class
-  DefineCommands();
+: G4VUserDetectorConstruction(), fSipmLogic(nullptr) {
   DefineMaterials();
 
   fVisAttrGreen = new G4VisAttributes(G4Colour(0.3,0.7,0.3,0.7));
@@ -38,7 +36,6 @@ FastFiberBasicDetectorConstruction::FastFiberBasicDetectorConstruction()
 }
 
 FastFiberBasicDetectorConstruction::~FastFiberBasicDetectorConstruction() {
-  delete fMessenger;
   delete fSipmLogic;
 
   delete fVisAttrGray;
@@ -103,8 +100,4 @@ void FastFiberBasicDetectorConstruction::ConstructSDandField() {
   fSipmLogic->SetSensitiveDetector(sipmSD);
 
   new FastFiberModel("FastFiberModel",mRegion);
-}
-
-void FastFiberBasicDetectorConstruction::DefineCommands() {
-
 }

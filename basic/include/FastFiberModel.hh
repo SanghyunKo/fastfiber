@@ -11,7 +11,7 @@
 
 struct FastFiberData {
 public:
-  FastFiberData(G4int, G4double, G4double, G4double, G4ThreeVector, G4ThreeVector, G4ThreeVector);
+  FastFiberData(G4int, G4double, G4double, G4double, G4ThreeVector, G4ThreeVector, G4ThreeVector, G4int status=0);
   ~FastFiberData() {}
 
   FastFiberData& operator=(const FastFiberData &right);
@@ -22,6 +22,11 @@ public:
   G4double GetWLSNILL() { return mOpWLSNumIntLenLeft; }
   void SetWLSNILL(G4double in) { mOpWLSNumIntLenLeft = in; }
 
+  G4int GetOpBoundaryStatus() { return mOpBoundaryStatus; }
+  void SetOpBoundaryStatus(G4int in) { mOpBoundaryStatus = in; }
+
+  G4bool checkRepetitive(const FastFiberData);
+
   G4int trackID;
   G4double kineticEnergy;
   G4double globalTime;
@@ -30,6 +35,7 @@ public:
   G4ThreeVector momentumDirection;
   G4ThreeVector polarization;
 private:
+  G4int mOpBoundaryStatus;
   G4double mOpAbsorptionNumIntLenLeft;
   G4double mOpWLSNumIntLenLeft;
 };
