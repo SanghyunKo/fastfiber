@@ -47,8 +47,10 @@ int main(int argc, char** argv) {
   physicsList->RegisterPhysics(opticalPhysics);
   opticalPhysics->Configure(kCerenkov, true);
   opticalPhysics->Configure(kScintillation, true);
+  opticalPhysics->Configure(kWLS, true);
   opticalPhysics->SetTrackSecondariesFirst(kCerenkov, true);
   opticalPhysics->SetTrackSecondariesFirst(kScintillation, true);
+  opticalPhysics->SetTrackSecondariesFirst(kWLS, true);
 
   G4FastSimulationPhysics* fastsimPhysics = new G4FastSimulationPhysics();
   fastsimPhysics->ActivateFastSimulation("opticalphoton");

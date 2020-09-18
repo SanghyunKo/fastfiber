@@ -4,6 +4,7 @@
 #include "G4ParticleTypes.hh"
 #include "G4ProcessManager.hh"
 #include "G4OpProcessSubType.hh"
+#include "G4GeometryTolerance.hh"
 #include "G4Tubs.hh"
 
 FastFiberData::FastFiberData(G4int id, G4double en, G4double globTime, G4double path, G4ThreeVector pos, G4ThreeVector mom, G4ThreeVector pol, G4int status) {
@@ -17,6 +18,7 @@ FastFiberData::FastFiberData(G4int id, G4double en, G4double globTime, G4double 
   mOpBoundaryStatus = status;
   mOpAbsorptionNumIntLenLeft = DBL_MAX;
   mOpWLSNumIntLenLeft = DBL_MAX;
+  mStepLengthInterval = 0.;
 }
 
 FastFiberData& FastFiberData::operator=(const FastFiberData &right) {
@@ -30,13 +32,15 @@ FastFiberData& FastFiberData::operator=(const FastFiberData &right) {
   mOpBoundaryStatus = right.mOpBoundaryStatus;
   mOpAbsorptionNumIntLenLeft = right.mOpAbsorptionNumIntLenLeft;
   mOpWLSNumIntLenLeft = right.mOpWLSNumIntLenLeft;
+  mStepLengthInterval = right.mStepLengthInterval;
 
   return *this;
 }
 
-G4bool FastFiberData::checkRepetitive(const FastFiberData theData) {
+G4bool FastFiberData::checkRepetitive(const FastFiberData theData, G4bool checkInterval) {
   if ( this->trackID!=theData.trackID ) return false;
   if ( this->mOpBoundaryStatus!=theData.mOpBoundaryStatus ) return false;
+  if ( checkInterval && std::abs(this->mStepLengthInterval-theData.mStepLengthInterval) > G4GeometryTolerance::GetInstance()->GetSurfaceTolerance() ) return false;
   return true;
 }
 
@@ -70,10 +74,7 @@ G4bool FastFiberModel::ModelTrigger(const G4FastTrack& fasttrack) {
 
   const G4Track* track = fasttrack.GetPrimaryTrack();
 
-  if ( !checkTotalInternalReflection(track) ) return false; // nothing to do if the previous status is not total internal reflection
-
-  G4double trkLength = track->GetTrackLength();
-  if ( trkLength==0. ) return false; // kill stopped particle
+  if ( !checkTotalInternalReflection(track) ) return false; // nothing to do if the track has no repetitive total internal reflection
 
   auto theTouchable = track->GetTouchableHandle();
   auto solid = theTouchable->GetSolid();
@@ -86,21 +87,24 @@ G4bool FastFiberModel::ModelTrigger(const G4FastTrack& fasttrack) {
   auto fiberPos = theTouchable->GetHistory()->GetTopTransform().Inverse().TransformPoint(G4ThreeVector(0.,0.,0.));
   mFiberAxis = theTouchable->GetHistory()->GetTopTransform().Inverse().TransformAxis(G4ThreeVector(0.,0.,1.));
 
+  if ( mFiberAxis.dot(mDataCurrent.momentumDirection)*mFiberAxis.dot(mDataPrevious.momentumDirection) < 0 ) return false; // different propagation direction (e.g. mirror)
+
   auto delta = mDataCurrent.globalPosition - mDataPrevious.globalPosition;
   mTransportUnit = delta.dot(mFiberAxis);
 
-  if ( mTransportUnit < 0 ) return false; // #TODO backward propagation
+  if ( mTransportUnit < 0. ) return false; // #TODO backward propagation
 
+  // estimate the number of expected total internal reflections before reaching fiber end
   auto fiberEnd = fiberPos + mFiberAxis*fiberLen/2.;
   auto toEnd = fiberEnd - mDataCurrent.globalPosition;
   G4double toEndAxis = toEnd.dot(mFiberAxis);
   G4double maxTransport = std::floor(toEndAxis/mTransportUnit);
   mNtransport = maxTransport - fSafety;
 
-  if ( mNtransport < 0. ) return false; // require at least n = fSafety of total internal reflections at the end
+  if ( mNtransport < 1. ) return false; // require at least n = fSafety of total internal reflections at the end
 
-  if ( checkAbsorption(maxTransport, mDataPrevious.GetWLSNILL(), mDataCurrent.GetWLSNILL()) ) return false; // do nothing if WLS happens before reaching fiber end
-  if ( checkAbsorption(maxTransport, mDataPrevious.GetAbsorptionNILL(), mDataCurrent.GetAbsorptionNILL()) ) fKill = true; // absorbed before reaching fiber end
+  if ( checkAbsorption(mDataPrevious.GetWLSNILL(), mDataCurrent.GetWLSNILL()) ) return false; // do nothing if WLS happens before reaching fiber end
+  if ( checkAbsorption(mDataPrevious.GetAbsorptionNILL(), mDataCurrent.GetAbsorptionNILL()) ) fKill = true; // absorbed before reaching fiber end
 
   return true;
 }
@@ -134,11 +138,19 @@ G4bool FastFiberModel::checkTotalInternalReflection(const G4Track* track) {
   if ( track->GetTrackStatus()==fStopButAlive || track->GetTrackStatus()==fStopAndKill ) return false;
   if ( mDataCurrent.trackID != track->GetTrackID() ) reset(); // reset when moving to the next track
 
+  // accumulate step length
+  mDataCurrent.AddStepLengthInterval( track->GetStepLength() );
+
   G4int theStatus = pOpBoundaryProc->GetStatus();
 
-  if ( theStatus==G4OpBoundaryProcessStatus::TotalInternalReflection || theStatus==G4OpBoundaryProcessStatus::StepTooSmall ) { // several cases have a status StepTooSmall
+  // skip exceptional iteration with FresnelReflection
+  if ( theStatus==G4OpBoundaryProcessStatus::FresnelReflection ) mDataCurrent.SetOpBoundaryStatus(theStatus);
+
+  // some cases have a status StepTooSmall when the reflection happens between the boundary of cladding & outer volume (outside->cladding) since the outer volume is not a G4Region
+  if ( theStatus==G4OpBoundaryProcessStatus::TotalInternalReflection || theStatus==G4OpBoundaryProcessStatus::StepTooSmall ) {
     if ( theStatus!=G4OpBoundaryProcessStatus::TotalInternalReflection ) { // skip StepTooSmall if the track already has TotalInternalReflection
       if ( mDataCurrent.GetOpBoundaryStatus()==G4OpBoundaryProcessStatus::TotalInternalReflection ) return false;
+      if ( mDataPrevious.GetOpBoundaryStatus()==G4OpBoundaryProcessStatus::TotalInternalReflection ) return false;
     }
 
     G4int trackID = track->GetTrackID();
@@ -149,23 +161,29 @@ G4bool FastFiberModel::checkTotalInternalReflection(const G4Track* track) {
     G4ThreeVector momentumDirection = track->GetMomentumDirection();
     G4ThreeVector polarization = track->GetPolarization();
 
-    mDataPrevious = mDataCurrent;
-    mDataCurrent = FastFiberData(trackID,kineticEnergy,globalTime,pathLength,globalPosition,momentumDirection,polarization,theStatus);
-    if ( pOpAbsorption!=nullptr ) mDataCurrent.SetAbsorptionNILL( pOpAbsorption->GetNumberOfInteractionLengthLeft() );
-    if ( pOpWLS!=nullptr ) mDataCurrent.SetWLSNILL( pOpWLS->GetNumberOfInteractionLengthLeft() );
+    auto candidate = FastFiberData(trackID,kineticEnergy,globalTime,pathLength,globalPosition,momentumDirection,polarization,theStatus);
+    if ( pOpAbsorption!=nullptr ) candidate.SetAbsorptionNILL( pOpAbsorption->GetNumberOfInteractionLengthLeft() );
+    if ( pOpWLS!=nullptr ) candidate.SetWLSNILL( pOpWLS->GetNumberOfInteractionLengthLeft() );
 
-    if ( mDataCurrent.checkRepetitive(mDataPrevious) ) return true; // find a repetitive point with the same status & trackID
+    G4bool repetitive = false;
+    if ( candidate.checkRepetitive(mDataCurrent,false) && mDataCurrent.checkRepetitive(mDataPrevious) ) repetitive = true;
+
+    mDataPrevious = mDataCurrent;
+    mDataCurrent = candidate;
+
+    return repetitive;
   }
 
   return false;
 }
 
-G4bool FastFiberModel::checkAbsorption(const G4double maxTransport, const G4double prevNILL, const G4double currentNILL) {
+G4bool FastFiberModel::checkAbsorption(const G4double prevNILL, const G4double currentNILL) {
+  if ( prevNILL < 0. || currentNILL < 0. ) return false; // the number of interaction length left has to be reset
   if ( prevNILL==currentNILL ) return false; // no absorption
 
   G4double deltaNILL = prevNILL - currentNILL;
 
-  if ( currentNILL - deltaNILL*( maxTransport + fSafety ) < 0. ) return true; // absorbed before reaching fiber end
+  if ( currentNILL - deltaNILL*( mNtransport + fSafety ) < 0. ) return true; // absorbed before reaching fiber end
 
   return false;
 }

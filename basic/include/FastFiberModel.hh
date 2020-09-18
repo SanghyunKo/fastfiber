@@ -25,7 +25,10 @@ public:
   G4int GetOpBoundaryStatus() { return mOpBoundaryStatus; }
   void SetOpBoundaryStatus(G4int in) { mOpBoundaryStatus = in; }
 
-  G4bool checkRepetitive(const FastFiberData);
+  G4double GetStepLengthInterval() { return mStepLengthInterval; }
+  void AddStepLengthInterval(G4double in) { mStepLengthInterval += in; }
+
+  G4bool checkRepetitive(const FastFiberData, G4bool checkInterval=true);
 
   G4int trackID;
   G4double kineticEnergy;
@@ -38,6 +41,7 @@ private:
   G4int mOpBoundaryStatus;
   G4double mOpAbsorptionNumIntLenLeft;
   G4double mOpWLSNumIntLenLeft;
+  G4double mStepLengthInterval;
 };
 
 class FastFiberModel : public G4VFastSimulationModel {
@@ -53,7 +57,7 @@ private:
   void DefineCommands();
 
   G4bool checkTotalInternalReflection(const G4Track* track);
-  G4bool checkAbsorption(const G4double maxTransport, const G4double prevNILL, const G4double currentNILL);
+  G4bool checkAbsorption(const G4double prevNILL, const G4double currentNILL);
 
   void setPostStepProc(const G4Track* track);
   void reset();
