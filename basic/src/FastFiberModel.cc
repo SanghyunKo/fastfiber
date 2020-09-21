@@ -74,6 +74,10 @@ G4bool FastFiberModel::ModelTrigger(const G4FastTrack& fasttrack) {
 
   const G4Track* track = fasttrack.GetPrimaryTrack();
 
+  // make sure that the track does not get absorbed after transportation, as number of interaction length left is reset when doing transportation
+  if (!checkNILL()) return true; // track is already transported but did not pass NILL check, attempt to reset NILL
+  if (fTransported) return false; // track is already transported and did pass NILL check, nothing to do
+
   if ( !checkTotalInternalReflection(track) ) return false; // nothing to do if the track has no repetitive total internal reflection
 
   auto theTouchable = track->GetTouchableHandle();
@@ -87,15 +91,17 @@ G4bool FastFiberModel::ModelTrigger(const G4FastTrack& fasttrack) {
   auto fiberPos = theTouchable->GetHistory()->GetTopTransform().Inverse().TransformPoint(G4ThreeVector(0.,0.,0.));
   mFiberAxis = theTouchable->GetHistory()->GetTopTransform().Inverse().TransformAxis(G4ThreeVector(0.,0.,1.));
 
-  if ( mFiberAxis.dot(mDataCurrent.momentumDirection)*mFiberAxis.dot(mDataPrevious.momentumDirection) < 0 ) return false; // different propagation direction (e.g. mirror)
+  if ( mFiberAxis.dot(mDataCurrent.momentumDirection)*mFiberAxis.dot(mDataPrevious.momentumDirection) < 0 ) { // different propagation direction (e.g. mirror)
+    reset();
+
+    return false;
+  }
 
   auto delta = mDataCurrent.globalPosition - mDataPrevious.globalPosition;
   mTransportUnit = delta.dot(mFiberAxis);
 
-  if ( mTransportUnit < 0. ) return false; // #TODO backward propagation
-
   // estimate the number of expected total internal reflections before reaching fiber end
-  auto fiberEnd = fiberPos + mFiberAxis*fiberLen/2.;
+  auto fiberEnd = ( mTransportUnit > 0. ) ? fiberPos + mFiberAxis*fiberLen/2. : fiberPos - mFiberAxis*fiberLen/2.;
   auto toEnd = fiberEnd - mDataCurrent.globalPosition;
   G4double toEndAxis = toEnd.dot(mFiberAxis);
   G4double maxTransport = std::floor(toEndAxis/mTransportUnit);
@@ -119,6 +125,8 @@ void FastFiberModel::DoIt(const G4FastTrack& fasttrack, G4FastStep& faststep) {
     return;
   }
 
+  if (fTransported) return; // reset NILL if the track did not meet NILL check
+
   double timeUnit = mDataCurrent.globalTime - mDataPrevious.globalTime;
   auto posShift = mTransportUnit*mNtransport*mFiberAxis; // #TODO apply shift for xy direction as well
   double timeShift = timeUnit*mNtransport;
@@ -128,6 +136,7 @@ void FastFiberModel::DoIt(const G4FastTrack& fasttrack, G4FastStep& faststep) {
   faststep.ProposePrimaryTrackFinalKineticEnergy( track->GetKineticEnergy() );
   faststep.ProposePrimaryTrackFinalMomentumDirection( track->GetMomentumDirection(), false );
   faststep.ProposePrimaryTrackFinalPolarization( track->GetPolarization(), false );
+  fTransported = true;
 
   return;
 }
@@ -180,12 +189,47 @@ G4bool FastFiberModel::checkTotalInternalReflection(const G4Track* track) {
 G4bool FastFiberModel::checkAbsorption(const G4double prevNILL, const G4double currentNILL) {
   if ( prevNILL < 0. || currentNILL < 0. ) return false; // the number of interaction length left has to be reset
   if ( prevNILL==currentNILL ) return false; // no absorption
+  if ( prevNILL==DBL_MAX || currentNILL==DBL_MAX ) return false; // NILL is re-initialized
 
   G4double deltaNILL = prevNILL - currentNILL;
 
   if ( currentNILL - deltaNILL*( mNtransport + fSafety ) < 0. ) return true; // absorbed before reaching fiber end
 
   return false;
+}
+
+G4bool FastFiberModel::checkNILL() {
+  if ( !fTransported ) return true; // do nothing if the track is not already transported
+
+  G4double wlsNILL = DBL_MAX;
+  G4double absorptionNILL = DBL_MAX;
+
+  if ( pOpWLS!=nullptr ) {
+    wlsNILL = pOpWLS->GetNumberOfInteractionLengthLeft();
+    if ( mDataPrevious.GetWLSNILL()==DBL_MAX || mDataCurrent.GetWLSNILL()==DBL_MAX ) return true; // NILL is re-initialized
+  }
+
+  if ( pOpAbsorption!=nullptr ) {
+    absorptionNILL = pOpAbsorption->GetNumberOfInteractionLengthLeft();
+    if ( mDataPrevious.GetAbsorptionNILL()==DBL_MAX || mDataCurrent.GetAbsorptionNILL()==DBL_MAX ) return true; // NILL is re-initialized
+  }
+
+  if ( wlsNILL < 0. || absorptionNILL < 0. ) return true; // let GEANT4 to reset them
+
+  G4double deltaWlsNILL = mDataPrevious.GetWLSNILL() - mDataCurrent.GetWLSNILL();
+  G4double deltaAbsorptionNILL = mDataPrevious.GetAbsorptionNILL() - mDataCurrent.GetAbsorptionNILL();
+
+  G4double finalWlsNILL = wlsNILL - deltaWlsNILL*fSafety;
+  G4double finalAbsorptionNILL = absorptionNILL - deltaAbsorptionNILL*fSafety;
+
+  // prevent double counting of the probability of getting absorbed (which already estimated before transportation)
+  // reset NILL again
+  if ( finalWlsNILL < 0. || finalAbsorptionNILL < 0. ) return false;
+
+  // NILL check passed (after trasportation)
+  reset();
+
+  return true;
 }
 
 void FastFiberModel::setPostStepProc(const G4Track* track) {
@@ -214,8 +258,13 @@ void FastFiberModel::reset() {
   mTransportUnit = 0.;
   mFiberAxis = G4ThreeVector(0);
   fKill = false;
-  mDataCurrent.SetOpBoundaryStatus(0);
-  mDataPrevious.SetOpBoundaryStatus(0);
+  fTransported = false;
+  mDataCurrent.SetOpBoundaryStatus(G4OpBoundaryProcessStatus::Undefined);
+  mDataPrevious.SetOpBoundaryStatus(G4OpBoundaryProcessStatus::Undefined);
+  mDataCurrent.SetWLSNILL(DBL_MAX);
+  mDataCurrent.SetAbsorptionNILL(DBL_MAX);
+  mDataPrevious.SetWLSNILL(DBL_MAX);
+  mDataPrevious.SetAbsorptionNILL(DBL_MAX);
 }
 
 void FastFiberModel::DefineCommands() {

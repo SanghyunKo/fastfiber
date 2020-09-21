@@ -11,7 +11,7 @@
 
 struct FastFiberData {
 public:
-  FastFiberData(G4int, G4double, G4double, G4double, G4ThreeVector, G4ThreeVector, G4ThreeVector, G4int status=0);
+  FastFiberData(G4int, G4double, G4double, G4double, G4ThreeVector, G4ThreeVector, G4ThreeVector, G4int status=G4OpBoundaryProcessStatus::Undefined);
   ~FastFiberData() {}
 
   FastFiberData& operator=(const FastFiberData &right);
@@ -58,6 +58,7 @@ private:
 
   G4bool checkTotalInternalReflection(const G4Track* track);
   G4bool checkAbsorption(const G4double prevNILL, const G4double currentNILL);
+  G4bool checkNILL();
 
   void setPostStepProc(const G4Track* track);
   void reset();
@@ -77,6 +78,7 @@ private:
   G4double mTransportUnit;
   G4ThreeVector mFiberAxis;
   G4bool fKill;
+  G4bool fTransported;
 
   G4bool fSwitch;
 };
