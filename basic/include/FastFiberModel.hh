@@ -60,8 +60,11 @@ private:
   G4bool checkAbsorption(const G4double prevNILL, const G4double currentNILL);
   G4bool checkNILL();
 
+  G4ThreeVector getXYcomponent(const FastFiberData&);
+
   void setPostStepProc(const G4Track* track);
   void reset();
+  void print();
 
   G4GenericMessenger* mMessenger;
   G4OpBoundaryProcess* pOpBoundaryProc;
@@ -76,11 +79,13 @@ private:
   G4int fSafety;
   G4double mNtransport;
   G4double mTransportUnit;
+  G4ThreeVector mFiberPos;
   G4ThreeVector mFiberAxis;
   G4bool fKill;
   G4bool fTransported;
 
   G4bool fSwitch;
+  G4int fVerbose;
 };
 
 #endif

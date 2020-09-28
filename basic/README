@@ -63,6 +63,7 @@
  - several user defined commands
    /fastfiber/action/useGPS true : activate GPS particle generator instead of using GEANT4 particle gun
    /fastfiber/event/verbose 1 : print the information of optical photons which hit SD
+   /fastfiber/model/verbose <int> : print the information of optical photons during fastsim model transportation
    /fastfiber/model/safety <int> : release fastfiber model before <int> number of total internal reflection before reaching fiber end
    /fastfiber/model/on <bool> : turn on/off fastfiber model
 

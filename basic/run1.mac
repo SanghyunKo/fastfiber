@@ -2,6 +2,7 @@
 /run/initialize
 
 /fastfiber/event/verbose 1
+/fastfiber/model/verbose 0
 /fastfiber/model/on False
 
 /gun/energy 2.8 eV

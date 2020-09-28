@@ -56,9 +56,12 @@ FastFiberModel::FastFiberModel(G4String name, G4Region* envelope)
   fSafety = 2;
   mNtransport = 0.;
   mTransportUnit = 0.;
+  mFiberPos = G4ThreeVector(0);
   mFiberAxis = G4ThreeVector(0);
   fKill = false;
+  fTransported = false;
   fSwitch = true;
+  fVerbose = 0;
 
   DefineCommands();
 }
@@ -85,10 +88,12 @@ G4bool FastFiberModel::ModelTrigger(const G4FastTrack& fasttrack) {
 
   if ( solid->GetEntityType()!="G4Tubs" ) return false; // only works for G4Tubs at the moment
 
+  if (fVerbose>0) print(); // at this point, the track should have passed all prerequisites before entering computationally heavy operations
+
   G4Tubs* tubs = static_cast<G4Tubs*>(solid);
   G4double fiberLen = 2.*tubs->GetZHalfLength();
 
-  auto fiberPos = theTouchable->GetHistory()->GetTopTransform().Inverse().TransformPoint(G4ThreeVector(0.,0.,0.));
+  mFiberPos = theTouchable->GetHistory()->GetTopTransform().Inverse().TransformPoint(G4ThreeVector(0.,0.,0.));
   mFiberAxis = theTouchable->GetHistory()->GetTopTransform().Inverse().TransformAxis(G4ThreeVector(0.,0.,1.));
 
   if ( mFiberAxis.dot(mDataCurrent.momentumDirection)*mFiberAxis.dot(mDataPrevious.momentumDirection) < 0 ) { // different propagation direction (e.g. mirror)
@@ -101,7 +106,7 @@ G4bool FastFiberModel::ModelTrigger(const G4FastTrack& fasttrack) {
   mTransportUnit = delta.dot(mFiberAxis);
 
   // estimate the number of expected total internal reflections before reaching fiber end
-  auto fiberEnd = ( mTransportUnit > 0. ) ? fiberPos + mFiberAxis*fiberLen/2. : fiberPos - mFiberAxis*fiberLen/2.;
+  auto fiberEnd = ( mTransportUnit > 0. ) ? mFiberPos + mFiberAxis*fiberLen/2. : mFiberPos - mFiberAxis*fiberLen/2.;
   auto toEnd = fiberEnd - mDataCurrent.globalPosition;
   G4double toEndAxis = toEnd.dot(mFiberAxis);
   G4double maxTransport = std::floor(toEndAxis/mTransportUnit);
@@ -151,6 +156,12 @@ G4bool FastFiberModel::checkTotalInternalReflection(const G4Track* track) {
   mDataCurrent.AddStepLengthInterval( track->GetStepLength() );
 
   G4int theStatus = pOpBoundaryProc->GetStatus();
+
+  if (fVerbose>1) {
+    G4cout << "FastFiberModel::checkTotalInternalReflection | TrackID = " << std::setw(4) << track->GetTrackID();
+    G4cout << " | G4OpBoundaryProcessStatus = " << std::setw(2) << theStatus;
+    G4cout << " | StepLength = " << std::setw(9) << track->GetStepLength() << G4endl;
+  }
 
   // skip exceptional iteration with FresnelReflection
   if ( theStatus==G4OpBoundaryProcessStatus::FresnelReflection ) mDataCurrent.SetOpBoundaryStatus(theStatus);
@@ -232,6 +243,12 @@ G4bool FastFiberModel::checkNILL() {
   return true;
 }
 
+G4ThreeVector FastFiberModel::getXYcomponent(const FastFiberData& data) {
+  auto relativePos = data.globalPosition - mFiberPos;
+  auto zcomponent = relativePos.dot(mFiberAxis)*mFiberAxis;
+  return (relativePos - zcomponent);
+}
+
 void FastFiberModel::setPostStepProc(const G4Track* track) {
   G4ProcessManager* pm = track->GetDefinition()->GetProcessManager();
   auto postStepProcessVector = pm->GetPostStepProcessVector();
@@ -256,6 +273,7 @@ void FastFiberModel::setPostStepProc(const G4Track* track) {
 void FastFiberModel::reset() {
   mNtransport = 0.;
   mTransportUnit = 0.;
+  mFiberPos = G4ThreeVector(0);
   mFiberAxis = G4ThreeVector(0);
   fKill = false;
   fTransported = false;
@@ -267,6 +285,57 @@ void FastFiberModel::reset() {
   mDataPrevious.SetAbsorptionNILL(DBL_MAX);
 }
 
+void FastFiberModel::print() {
+  if (fVerbose>1) {
+    G4cout << G4endl;
+
+    G4cout << "mDataPrevious.trackID = " << mDataPrevious.trackID;
+    G4cout << " | .mOpBoundaryStatus = " << std::setw(4) << mDataPrevious.GetOpBoundaryStatus();
+    G4cout << " | .mStepLengthInterval = " << mDataPrevious.GetStepLengthInterval() << G4endl;
+
+    if (fVerbose>2) {
+      G4cout << "  | globalPosition    = (" << std::setw(9) << mDataPrevious.globalPosition.x();
+      G4cout << "," << std::setw(9) << mDataPrevious.globalPosition.y();
+      G4cout << "," << std::setw(9) << mDataPrevious.globalPosition.z() << ")" << G4endl;
+
+      G4cout << "  | momentumDirection = (" << std::setw(9) << mDataPrevious.momentumDirection.x();
+      G4cout << "," << std::setw(9) << mDataPrevious.momentumDirection.y();
+      G4cout << "," << std::setw(9) << mDataPrevious.momentumDirection.z() << ")" << G4endl;
+
+      G4cout << "  | polarization      = (" << std::setw(9) << mDataPrevious.polarization.x();
+      G4cout << "," << std::setw(9) << mDataPrevious.polarization.y();
+      G4cout << "," << std::setw(9) << mDataPrevious.polarization.z() << ")" << G4endl;
+
+      G4cout << "  | globalTime        =  " << std::setw(9) << mDataPrevious.globalTime << G4endl;
+      G4cout << "  | WLSNILL           =  " << std::setw(9) << mDataPrevious.GetWLSNILL() << G4endl;
+      G4cout << "  | AbsorptionNILL    =  " << std::setw(9) << mDataPrevious.GetAbsorptionNILL() << G4endl;
+    }
+
+    G4cout << "mDataCurrent.trackID  = " << mDataCurrent.trackID;
+    G4cout << " | .mOpBoundaryStatus  = " << std::setw(4) << mDataCurrent.GetOpBoundaryStatus() << G4endl;
+
+    if (fVerbose>2) {
+      G4cout << "  | globalPosition    = (" << std::setw(9) << mDataCurrent.globalPosition.x();
+      G4cout << "," << std::setw(9) << mDataCurrent.globalPosition.y();
+      G4cout << "," << std::setw(9) << mDataCurrent.globalPosition.z() << ")" << G4endl;
+
+      G4cout << "  | momentumDirection = (" << std::setw(9) << mDataCurrent.momentumDirection.x();
+      G4cout << "," << std::setw(9) << mDataCurrent.momentumDirection.y();
+      G4cout << "," << std::setw(9) << mDataCurrent.momentumDirection.z() << ")" << G4endl;
+
+      G4cout << "  | polarization      = (" << std::setw(9) << mDataCurrent.polarization.x();
+      G4cout << "," << std::setw(9) << mDataCurrent.polarization.y();
+      G4cout << "," << std::setw(9) << mDataCurrent.polarization.z() << ")" << G4endl;
+
+      G4cout << "  | globalTime        =  " << std::setw(9) << mDataCurrent.globalTime << G4endl;
+      G4cout << "  | WLSNILL           =  " << std::setw(9) << mDataCurrent.GetWLSNILL() << G4endl;
+      G4cout << "  | AbsorptionNILL    =  " << std::setw(9) << mDataCurrent.GetAbsorptionNILL() << G4endl;
+    }
+
+    G4cout << G4endl;
+  }
+}
+
 void FastFiberModel::DefineCommands() {
   mMessenger = new G4GenericMessenger(this, "/fastfiber/model/", "fastfiber model control");
   G4GenericMessenger::Command& safetyCmd = mMessenger->DeclareProperty("safety",fSafety,"min number of total internal reflection");
@@ -276,4 +345,8 @@ void FastFiberModel::DefineCommands() {
   G4GenericMessenger::Command& switchCmd = mMessenger->DeclareProperty("on",fSwitch,"turn on fastfiber model");
   switchCmd.SetParameterName("on",true);
   switchCmd.SetDefaultValue("True");
+
+  G4GenericMessenger::Command& verboseCmd = mMessenger->DeclareProperty("verbose",fVerbose,"verbose level");
+  verboseCmd.SetParameterName("verbose",true);
+  verboseCmd.SetDefaultValue("0");
 }
